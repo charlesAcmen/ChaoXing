@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "超星视频增强倍速",
+  "version": "1.0.6",
+  "description": "为超星学习通网页视频播放器补充最高 16x 的倍速选项。",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.chaoxing.com/*",
+        "*://*.chaoxing.cn/*",
+        "*://*.chaoxingvideo.com/*",
+        "*://*.chaoxingvideo.cn/*"
+      ],
+      "js": ["page-bridge.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://*.chaoxing.com/*",
+        "*://*.chaoxing.cn/*",
+        "*://*.chaoxingvideo.com/*",
+        "*://*.chaoxingvideo.cn/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

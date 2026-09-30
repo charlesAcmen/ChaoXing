@@ -1,0 +1,110 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Chaoxing speed extension stress test</title>
+<link rel="stylesheet" href="/styles.css">
+<style>
+  body { font-family: sans-serif; }
+  .video-js { width: 640px; height: 360px; background: #111; position: relative; }
+  video { width: 100%; height: 320px; }
+  .vjs-control-bar { display: flex; height: 40px; background: #222; }
+  iframe { width: 320px; height: 180px; border: 1px solid #aaa; }
+</style>
+
+<h1>Stress test</h1>
+<div class="video-js">
+  <video id="main-video" muted></video>
+  <div class="vjs-control-bar"><button class="vjs-fullscreen-control">Full</button></div>
+</div>
+<div id="churn"></div>
+<div id="frames"></div>
+<pre id="result">running</pre>
+
+<script src="/page-bridge.js"></script>
+<script>
+  const mainVideo = document.querySelector("#main-video");
+  const playbackMock = { playing: true, forcedPauseCalls: 0, forcedResetCalls: 0, resumeCalls: 0 };
+  Object.defineProperty(mainVideo, "paused", {
+    configurable: true,
+    get: () => !playbackMock.playing
+  });
+  mainVideo.pause = () => {
+    playbackMock.playing = false;
+    playbackMock.forcedPauseCalls += 1;
+  };
+  mainVideo.play = () => {
+    playbackMock.playing = true;
+    playbackMock.resumeCalls += 1;
+    return Promise.resolve();
+  };
+  mainVideo.addEventListener("ratechange", () => {
+    if (mainVideo.playbackRate > 2) {
+      mainVideo.pause();
+      playbackMock.forcedResetCalls += 1;
+      mainVideo.playbackRate = 1;
+    }
+  });
+</script>
+<script src="/content.js"></script>
+<script>
+  const startedAt = performance.now();
+  let timerTicks = 0;
+  let mutationsCreated = 0;
+
+  for (let index = 0; index < 6; index += 1) {
+    const frame = document.createElement("iframe");
+    frame.src = `/tests/frame.html?index=${index}`;
+    document.querySelector("#frames").append(frame);
+  }
+
+  const timer = setInterval(() => {
+    timerTicks += 1;
+    const batch = document.createElement("div");
+    for (let index = 0; index < 25; index += 1) {
+      batch.append(document.createElement("span"));
+      mutationsCreated += 1;
+    }
+    document.querySelector("#churn").replaceChildren(batch);
+  }, 1);
+
+  setTimeout(() => {
+    clearInterval(timer);
+    document.querySelector('.cx-extra-speed-option[data-speed="16"]')?.click();
+
+    setTimeout(() => {
+
+      const frames = [...document.querySelectorAll("iframe")];
+      const frameControls = frames.reduce((total, frame) => {
+        return total + frame.contentDocument.querySelectorAll(".cx-extra-speed").length;
+      }, 0);
+      const elapsedMs = Math.round(performance.now() - startedAt);
+      const result = {
+        elapsedMs,
+        timerTicks,
+        mutationsCreated,
+        topVideos: document.querySelectorAll("video").length,
+        topControls: document.querySelectorAll(".cx-extra-speed").length,
+        frameControls,
+        playbackRate: mainVideo.playbackRate,
+        lockedRate: mainVideo.getAttribute("data-cx-extra-speed-locked"),
+        forcedPauseCalls: playbackMock.forcedPauseCalls,
+        forcedResetCalls: playbackMock.forcedResetCalls,
+        resumeCalls: playbackMock.resumeCalls,
+        playingAfterRecovery: playbackMock.playing,
+        responsive: timerTicks > 100 && elapsedMs < 7000
+      };
+
+      document.querySelector("#result").textContent = JSON.stringify(result, null, 2);
+      document.body.dataset.testStatus = result.responsive
+        && result.topControls === 1
+        && frameControls === 6
+        && result.playbackRate === 16
+        && result.lockedRate === "16"
+        && result.forcedPauseCalls > 0
+        && result.forcedResetCalls > 0
+        && result.resumeCalls > 0
+        && result.playingAfterRecovery
+        ? "passed"
+        : "failed";
+    }, 1400);
+  }, 3000);
+</script>

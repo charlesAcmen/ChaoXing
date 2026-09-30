@@ -1,0 +1,111 @@
+.cx-extra-speed-host {
+  position: relative !important;
+}
+
+.cx-extra-speed {
+  box-sizing: border-box;
+  color: #fff;
+  font: 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  user-select: none;
+}
+
+.cx-extra-speed--control-bar {
+  position: relative;
+  width: 4.8em;
+  height: 100%;
+  flex: 0 0 4.8em;
+}
+
+.cx-extra-speed--overlay {
+  position: absolute;
+  right: 12px;
+  bottom: 48px;
+  z-index: 2147483647;
+}
+
+.cx-extra-speed--fixed {
+  position: fixed;
+  right: 18px;
+  bottom: 64px;
+  z-index: 2147483647;
+}
+
+.cx-extra-speed-button,
+.cx-extra-speed-option {
+  border: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cx-extra-speed-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 46px;
+  height: 100%;
+  padding: 0 8px;
+  background: transparent;
+  border-radius: 4px;
+}
+
+.cx-extra-speed--overlay .cx-extra-speed-button {
+  min-height: 32px;
+  background: rgba(20, 20, 20, 0.82);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.cx-extra-speed--fixed .cx-extra-speed-button {
+  min-width: 82px;
+  min-height: 36px;
+  background: rgba(15, 15, 15, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.45);
+  font-weight: 600;
+}
+
+.cx-extra-speed-button:hover,
+.cx-extra-speed-button:focus-visible {
+  background: rgba(255, 255, 255, 0.18);
+  outline: none;
+}
+
+.cx-extra-speed-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  width: 92px;
+  max-height: min(360px, 70vh);
+  padding: 6px;
+  overflow-y: auto;
+  background: rgba(20, 20, 20, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 7px;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.38);
+}
+
+.cx-extra-speed.is-open .cx-extra-speed-menu {
+  display: grid;
+  gap: 2px;
+}
+
+.cx-extra-speed-option {
+  width: 100%;
+  padding: 7px 10px;
+  text-align: center;
+  background: transparent;
+  border-radius: 4px;
+}
+
+.cx-extra-speed-option:hover,
+.cx-extra-speed-option:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+  outline: none;
+}
+
+.cx-extra-speed-option.is-selected {
+  color: #69b7ff;
+  background: rgba(38, 139, 230, 0.2);
+  font-weight: 600;
+}
