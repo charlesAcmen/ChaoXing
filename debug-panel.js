@@ -30,10 +30,17 @@
       : "";
   }
 
+  function formatDetails(label, value) {
+    if (!value || (typeof value === "object" && Object.keys(value).length === 0)) return "";
+    return `\n    ${label}=${JSON.stringify(value)}`;
+  }
+
+  function formatRequest(entry) {
+    return `${formatDetails("request", entry.requestValues)}${formatDetails("headers", entry.requestHeaders)}`;
+  }
+
   function formatResponse(entry) {
-    return entry.responseSummary
-      ? ` · response=${JSON.stringify(entry.responseSummary)}`
-      : "";
+    return formatDetails("response", entry.responseSummary);
   }
 
   function formatEvent(entry) {
@@ -51,7 +58,7 @@
       ? "pending"
       : `${entry.status ?? entry.outcome ?? "done"}${entry.elapsedMs != null ? ` · ${entry.elapsedMs}ms` : ""}`;
     const keys = entry.keys?.length ? ` · keys=${entry.keys.join(",")}` : "";
-    return `${time}  ${direction} #${entry.requestId} ${entry.transport.toUpperCase()} ${entry.method} ${entry.endpoint} · ${status}${keys}${formatSafeValues(entry)}${formatResponse(entry)}${formatMedia(entry.media)}`;
+    return `${time}  ${direction} #${entry.requestId} ${entry.transport.toUpperCase()} ${entry.method} ${entry.endpoint} · ${status}${keys}${formatSafeValues(entry)}${formatMedia(entry.media)}${formatRequest(entry)}${formatResponse(entry)}`;
   }
 
   function isVisible(entry) {
@@ -79,7 +86,7 @@
     return JSON.stringify({
       exportedAt: new Date().toISOString(),
       page: `${location.origin}${location.pathname}`,
-      note: "Query/body values are omitted except safe numeric playback fields.",
+      note: "Sync-request query/body values, explicit request headers, frame URLs, and bounded response bodies are included. Treat this export as sensitive.",
       events
     }, null, 2);
   }
@@ -108,7 +115,7 @@
 
     const actions = document.createElement("div");
     actions.className = "cx-sync-debug-actions";
-    const copy = createButton("复制", "复制脱敏后的完整调试日志");
+    const copy = createButton("复制", "复制完整调试日志（包含请求参数，可能含敏感值）");
     const clear = createButton("清空", "清空当前调试日志");
     const collapse = createButton("−", "折叠或展开调试窗口");
     actions.append(copy, clear, collapse);
@@ -128,7 +135,7 @@
     copy.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(serializeEvents());
-        copyStatus.textContent = "已复制脱敏日志";
+        copyStatus.textContent = "已复制完整日志，请注意敏感参数";
       } catch (_) {
         copyStatus.textContent = "复制失败，请在开发者工具中复制";
       }

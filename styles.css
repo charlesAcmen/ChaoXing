@@ -116,7 +116,7 @@
   right: 14px;
   z-index: 2147483646;
   box-sizing: border-box;
-  width: min(520px, calc(100vw - 28px));
+  width: min(760px, calc(100vw - 28px));
   color: #eaf4ff;
   background: rgba(10, 17, 26, 0.95);
   border: 1px solid rgba(105, 183, 255, 0.55);
@@ -183,7 +183,7 @@
 }
 
 .cx-sync-debug-list {
-  max-height: min(42vh, 420px);
+  max-height: min(55vh, 560px);
   overflow: auto;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }

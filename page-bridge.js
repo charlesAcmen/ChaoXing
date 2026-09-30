@@ -16,8 +16,10 @@
   const SAFE_VALUE_KEY = /^(playingtime|currenttime|watchtime|duration|attduration|cliptime|position|rate|rt|speed|isdrag|ispassed)$/i;
   const RESPONSE_STATUS_KEY = /^(ispassed|passed|success|status|code|msg|message|error|errormsg|result)$/i;
   const SYNC_HINT = /(log|progress|save|study|learn|report|watch|multimedia|job)/i;
+  const MAX_REQUEST_VALUE_LENGTH = 4000;
+  const MAX_RESPONSE_LENGTH = 8000;
+  const MAX_RESPONSE_PREVIEW_LENGTH = 2000;
   const xhrRequests = new WeakMap();
-  const lastTimeUpdate = new WeakMap();
   const frameDebugId = Math.random().toString(36).slice(2, 6);
   let nextRequestId = 1;
 
@@ -43,6 +45,7 @@
       payload: {
         timestamp: Date.now(),
         frame: location.hostname,
+        frameUrl: location.href,
         ...payload
       }
     };
@@ -53,11 +56,46 @@
     }
   }
 
-  function collectFields(target, keys, safeValues) {
+  function captureValue(value) {
+    if (value instanceof File) {
+      return `[File name=${value.name} type=${value.type || "unknown"} size=${value.size}]`;
+    }
+    if (value instanceof Blob) {
+      return `[Blob type=${value.type || "unknown"} size=${value.size}]`;
+    }
+    if (value == null || ["number", "boolean"].includes(typeof value)) return value;
+    let text;
+    if (typeof value === "object") {
+      try {
+        text = JSON.stringify(value);
+      } catch (_) {
+        text = String(value);
+      }
+    } else {
+      text = String(value);
+    }
+    return text.length <= MAX_REQUEST_VALUE_LENGTH
+      ? text
+      : `${text.slice(0, MAX_REQUEST_VALUE_LENGTH)}… [${text.length} chars]`;
+  }
+
+  function addCapturedValue(target, key, value) {
+    const captured = captureValue(value);
+    if (!(key in target)) {
+      target[key] = captured;
+    } else if (Array.isArray(target[key])) {
+      target[key].push(captured);
+    } else {
+      target[key] = [target[key], captured];
+    }
+  }
+
+  function collectFields(target, keys, safeValues, capturedValues) {
     if (!target) return;
     const add = (key, value) => {
       const normalizedKey = String(key);
       keys.add(normalizedKey);
+      addCapturedValue(capturedValues, normalizedKey, value);
       if (SAFE_VALUE_KEY.test(normalizedKey) && /^(?:-?\d+(?:\.\d+)?|true|false|\d+(?:[_:-]\d+)+)$/i.test(String(value))) {
         safeValues[normalizedKey] = String(value);
       }
@@ -83,30 +121,48 @@
     }
   }
 
-  function inspectRequest(rawUrl, body) {
+  function collectHeaders(headers) {
+    const captured = {};
+    if (!headers) return captured;
+    try {
+      for (const [key, value] of new Headers(headers).entries()) {
+        addCapturedValue(captured, key, value);
+      }
+    } catch (_) {
+      // Invalid or browser-managed headers should not affect the request.
+    }
+    return captured;
+  }
+
+  function inspectRequest(rawUrl, body, headers) {
     const keys = new Set();
     const safeValues = {};
+    const queryValues = {};
+    const bodyValues = {};
     let endpoint = String(rawUrl || "unknown");
     try {
       const url = new URL(endpoint, location.href);
-      collectFields(url.searchParams, keys, safeValues);
+      collectFields(url.searchParams, keys, safeValues, queryValues);
       endpoint = `${url.hostname}${url.pathname}`;
     } catch (_) {
       endpoint = endpoint.split("?")[0];
     }
-    collectFields(body, keys, safeValues);
+    collectFields(body, keys, safeValues, bodyValues);
     const keyList = [...keys].sort();
+    const likelySync = SYNC_HINT.test(endpoint) || keyList.some((key) => SYNC_HINT.test(key) || SAFE_VALUE_KEY.test(key));
     return {
       endpoint,
       keys: keyList,
       safeValues,
-      likelySync: SYNC_HINT.test(endpoint) || keyList.some((key) => SYNC_HINT.test(key) || SAFE_VALUE_KEY.test(key))
+      likelySync,
+      requestValues: likelySync ? { query: queryValues, body: bodyValues } : null,
+      requestHeaders: likelySync ? collectHeaders(headers) : null
     };
   }
 
-  function startNetwork(transport, method, rawUrl, body) {
+  function startNetwork(transport, method, rawUrl, body, headers) {
     const requestId = `${frameDebugId}-${nextRequestId++}`;
-    const inspected = inspectRequest(rawUrl, body);
+    const inspected = inspectRequest(rawUrl, body, headers);
     const startedAt = performance.now();
     emitDebug({
       kind: "network",
@@ -154,6 +210,27 @@
     }
   }
 
+  function captureResponseText(text) {
+    if (typeof text !== "string") return null;
+    const trimmed = text.trim();
+    if (!trimmed) return { format: "text", length: 0, value: "" };
+
+    if (trimmed.length > MAX_RESPONSE_LENGTH) {
+      return {
+        format: "text",
+        length: trimmed.length,
+        truncated: true,
+        preview: trimmed.slice(0, MAX_RESPONSE_PREVIEW_LENGTH)
+      };
+    }
+
+    try {
+      return { format: "json", length: trimmed.length, value: JSON.parse(trimmed) };
+    } catch (_) {
+      return { format: "text", length: trimmed.length, value: trimmed };
+    }
+  }
+
   function finishNetwork(meta, transport, method, status, outcome = "complete", responseSummary = null) {
     emitDebug({
       kind: "network",
@@ -165,6 +242,8 @@
       keys: meta.keys,
       safeValues: meta.safeValues,
       likelySync: meta.likelySync,
+      requestValues: meta.requestValues,
+      requestHeaders: meta.requestHeaders,
       status,
       outcome,
       responseSummary,
@@ -351,15 +430,6 @@
     }, true);
   }
 
-  document.addEventListener("timeupdate", (event) => {
-    const video = event.target;
-    if (!(video instanceof HTMLMediaElement)) return;
-    const now = performance.now();
-    if (now - (lastTimeUpdate.get(video) || 0) < 1000 && !video.ended) return;
-    lastTimeUpdate.set(video, now);
-    emitDebug({ kind: "media", event: "timeupdate", media: snapshotMedia(video) });
-  }, true);
-
   document.addEventListener("visibilitychange", () => {
     emitDebug({
       kind: "media",
@@ -373,7 +443,8 @@
     window.fetch = function fetch(input, init) {
       const rawUrl = input instanceof Request ? input.url : input;
       const method = init?.method || (input instanceof Request ? input.method : "GET");
-      const meta = startNetwork("fetch", method, rawUrl, init?.body);
+      const headers = init?.headers || (input instanceof Request ? input.headers : null);
+      const meta = startNetwork("fetch", method, rawUrl, init?.body, headers);
       try {
         const result = Reflect.apply(nativeFetch, this, arguments);
         result.then(
@@ -383,7 +454,13 @@
               return;
             }
             response.clone().text().then(
-              (text) => finishNetwork(meta, "fetch", method, response.status, "complete", summarizeResponseText(text)),
+              (text) => finishNetwork(meta, "fetch", method, response.status, "complete", {
+                url: response.url,
+                type: response.type,
+                contentType: response.headers.get("content-type"),
+                summary: summarizeResponseText(text),
+                body: captureResponseText(text)
+              }),
               () => finishNetwork(meta, "fetch", method, response.status)
             );
           },
@@ -400,20 +477,42 @@
   const xhrPrototype = XMLHttpRequest.prototype;
   const nativeXhrOpen = xhrPrototype.open;
   const nativeXhrSend = xhrPrototype.send;
+  const nativeXhrSetRequestHeader = xhrPrototype.setRequestHeader;
   xhrPrototype.open = function open(method, url) {
-    xhrRequests.set(this, { method, url });
+    xhrRequests.set(this, { method, url, headers: {} });
     return Reflect.apply(nativeXhrOpen, this, arguments);
   };
+  xhrPrototype.setRequestHeader = function setRequestHeader(name, value) {
+    const request = xhrRequests.get(this);
+    if (request) addCapturedValue(request.headers, String(name), value);
+    return Reflect.apply(nativeXhrSetRequestHeader, this, arguments);
+  };
   xhrPrototype.send = function send(body) {
-    const request = xhrRequests.get(this) || { method: "GET", url: "unknown" };
-    const meta = startNetwork("xhr", request.method, request.url, body);
+    const request = xhrRequests.get(this) || { method: "GET", url: "unknown", headers: {} };
+    const meta = startNetwork("xhr", request.method, request.url, body, request.headers);
     this.addEventListener("loadend", () => {
       let responseSummary = null;
       if (meta.likelySync) {
         try {
-          responseSummary = this.responseType === "json"
-            ? summarizeResponse(this.response)
-            : summarizeResponseText(this.responseText);
+          if (this.responseType === "json") {
+            const text = JSON.stringify(this.response);
+            responseSummary = {
+              url: this.responseURL,
+              type: this.responseType || "text",
+              contentType: this.getResponseHeader("content-type"),
+              summary: summarizeResponse(this.response),
+              body: captureResponseText(text)
+            };
+          } else {
+            const text = this.responseText;
+            responseSummary = {
+              url: this.responseURL,
+              type: this.responseType || "text",
+              contentType: this.getResponseHeader("content-type"),
+              summary: summarizeResponseText(text),
+              body: captureResponseText(text)
+            };
+          }
         } catch (_) {
           responseSummary = null;
         }
