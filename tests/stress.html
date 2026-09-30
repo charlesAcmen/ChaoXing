@@ -45,10 +45,52 @@
   });
 </script>
 <script src="/content.js"></script>
+<script src="/debug-panel.js"></script>
 <script>
   const startedAt = performance.now();
   let timerTicks = 0;
   let mutationsCreated = 0;
+
+  async function exercisePauseGuard() {
+    const wrapper = document.createElement("div");
+    wrapper.className = "video-js";
+    const video = document.createElement("video");
+    video.muted = true;
+    wrapper.append(video);
+    document.body.append(wrapper);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 2;
+    canvas.height = 2;
+    canvas.getContext("2d").fillRect(0, 0, 2, 2);
+    const stream = canvas.captureStream(30);
+    video.srcObject = stream;
+
+    try {
+      stream.getVideoTracks()[0]?.requestFrame?.();
+      await Promise.race([
+        video.play(),
+        new Promise((resolve) => setTimeout(resolve, 1000))
+      ]);
+      video.setAttribute("data-cx-extra-speed-request", "16");
+      video.dispatchEvent(new Event("chaoxing-extra-speed-request"));
+      video.removeAttribute("data-cx-extra-speed-request");
+
+      video.pause();
+      const scriptPauseBlocked = !video.paused
+        && video.getAttribute("data-cx-extra-speed-locked") === "16";
+
+      video.dispatchEvent(new Event("ended"));
+      video.pause();
+      const nativePauseRestoredAtEnd = video.paused
+        && !video.hasAttribute("data-cx-extra-speed-locked");
+
+      return { scriptPauseBlocked, nativePauseRestoredAtEnd };
+    } finally {
+      stream.getTracks().forEach((track) => track.stop());
+      wrapper.remove();
+    }
+  }
 
   for (let index = 0; index < 6; index += 1) {
     const frame = document.createElement("iframe");
@@ -66,9 +108,11 @@
     document.querySelector("#churn").replaceChildren(batch);
   }, 1);
 
-  setTimeout(() => {
+  setTimeout(async () => {
     clearInterval(timer);
     document.querySelector('.cx-extra-speed-option[data-speed="16"]')?.click();
+    const pauseGuard = await exercisePauseGuard();
+    await fetch("/tests/progress.json?playingTime=10&duration=120&attDuration=8&clipTime=0_10&token=do-not-log");
 
     setTimeout(() => {
 
@@ -77,6 +121,7 @@
         return total + frame.contentDocument.querySelectorAll(".cx-extra-speed").length;
       }, 0);
       const elapsedMs = Math.round(performance.now() - startedAt);
+      const debugText = document.querySelector(".cx-sync-debug-list")?.textContent || "";
       const result = {
         elapsedMs,
         timerTicks,
@@ -90,8 +135,21 @@
         forcedResetCalls: playbackMock.forcedResetCalls,
         resumeCalls: playbackMock.resumeCalls,
         playingAfterRecovery: playbackMock.playing,
+        scriptPauseBlocked: pauseGuard.scriptPauseBlocked,
+        nativePauseRestoredAtEnd: pauseGuard.nativePauseRestoredAtEnd,
+        debugPanelPresent: Boolean(document.querySelector(".cx-sync-debug")),
+        syncRequestVisible: debugText.includes("/tests/progress.json"),
+        safeProgressVisible: debugText.includes("playingTime=10")
+          && debugText.includes("attDuration=8"),
+        responseSummaryVisible: debugText.includes('"isPassed":"false"')
+          && debugText.includes('"success":"true"'),
+        pauseCallerVisible: debugText.includes("stress.html"),
+        sensitiveValueHidden: !debugText.includes("do-not-log"),
         responsive: timerTicks > 100 && elapsedMs < 7000
       };
+
+      mainVideo.dispatchEvent(new Event("ended"));
+      result.lockReleasedAtEnd = !mainVideo.hasAttribute("data-cx-extra-speed-locked");
 
       document.querySelector("#result").textContent = JSON.stringify(result, null, 2);
       document.body.dataset.testStatus = result.responsive
@@ -103,6 +161,15 @@
         && result.forcedResetCalls > 0
         && result.resumeCalls > 0
         && result.playingAfterRecovery
+        && result.scriptPauseBlocked
+        && result.nativePauseRestoredAtEnd
+        && result.lockReleasedAtEnd
+        && result.debugPanelPresent
+        && result.syncRequestVisible
+        && result.safeProgressVisible
+        && result.responseSummaryVisible
+        && result.pauseCallerVisible
+        && result.sensitiveValueHidden
         ? "passed"
         : "failed";
     }, 1400);

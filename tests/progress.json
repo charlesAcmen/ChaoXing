@@ -1,0 +1,10 @@
+{
+  "isPassed": false,
+  "success": true,
+  "status": "recorded",
+  "data": {
+    "code": 0,
+    "message": "progress accepted"
+  },
+  "privateToken": "must-not-appear"
+}

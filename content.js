@@ -91,6 +91,14 @@
         return;
       }
 
+      const nearEnd = Number.isFinite(video.duration)
+        && video.duration > 0
+        && video.currentTime >= video.duration - 0.25;
+      if (video.ended || nearEnd) {
+        cancelRecovery(video);
+        return;
+      }
+
       try {
         if (Math.abs(video.playbackRate - speed) > 0.001) {
           video.playbackRate = speed;
@@ -182,6 +190,7 @@
 
     if (previous) {
       video.removeEventListener("ratechange", previous.onRateChange);
+      video.removeEventListener("ended", previous.onEnded);
     }
 
     const { mount, mode } = findMount(video);
@@ -193,8 +202,10 @@
     mount.append(control);
 
     const onRateChange = () => updateSelection(video, control);
+    const onEnded = () => cancelRecovery(video);
     video.addEventListener("ratechange", onRateChange);
-    bindings.set(video, { control, onRateChange });
+    video.addEventListener("ended", onEnded);
+    bindings.set(video, { control, onRateChange, onEnded });
   }
 
   function pollForVideos(attempt = 0) {
